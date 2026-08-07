@@ -213,11 +213,8 @@ public class MediaPickerActivity extends Activity {
                             try {
                                 if (dataColumnIndex != -1) {
                                     String path = cursor.getString(dataColumnIndex);
-                                    if (path != null) {
-                                        File file = new File(path);
-                                        if (file.exists() && file.length() > 0) {
-                                            foundFiles.add(file);
-                                        }
+                                    if (path != null && !path.contains("/HFMRecycleBin/")) {
+                                        foundFiles.add(new File(path));
                                     }
                                 }
                             } catch (Exception rowEx) {
@@ -315,9 +312,7 @@ public class MediaPickerActivity extends Activity {
                 } else {
                     if (file.getName().startsWith(".")) continue;
                     if (isCategoryMatch(file.getName(), category)) {
-                        if (file.exists() && file.length() > 0) {
-                            outList.add(file);
-                        }
+                        outList.add(file);
                     }
                 }
             }
