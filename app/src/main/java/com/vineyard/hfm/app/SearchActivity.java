@@ -279,7 +279,6 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
     }
 
     private synchronized void executeQuery(final String query) {
-        // Mechanism 1: Cancel any previously active background query task before submitting a new request
         if (currentSearchFuture != null) {
             currentSearchFuture.cancel(true);
         }
@@ -287,14 +286,17 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
         currentSearchFuture = searchExecutor.submit(new Runnable() {
             @Override
             public void run() {
+                long startTimeMs = System.currentTimeMillis();
                 try {
                     final QueryParameters params = parseQuery(query);
                     List<SearchResult> mediaStoreResults = executeQueryWithMediaStore(params);
 
                     if (!mediaStoreResults.isEmpty()) {
+                        long durationMs = System.currentTimeMillis() - startTimeMs;
+                        writeErrorLogToDisk("MediaStore successfully returned " + mediaStoreResults.size() + " results in " + durationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]", null);
                         updateUIWithResults(mediaStoreResults);
                     } else {
-                        writeErrorLogToDisk("MediaStore returned 0 results for query: " + query + " [Filter: " + currentFilterType + "]. Switching to direct disk scan.", null);
+                        writeErrorLogToDisk("MediaStore returned 0 results for query: [" + query + "] [Filter: " + currentFilterType + "]. Switching to direct disk scan fallback.", null);
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
@@ -302,10 +304,11 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
                             }
                         });
                         List<SearchResult> fileSystemResults = performFallbackFileSearch(params);
+                        long durationMs = System.currentTimeMillis() - startTimeMs;
+                        writeErrorLogToDisk("Fallback deep disk scan returned " + fileSystemResults.size() + " results in " + durationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]", null);
                         updateUIWithResults(fileSystemResults);
                     }
                 } catch (Throwable t) {
-                    // Diagnostic Log Feature: Write stack trace to /Phone Storage/hfm log report/
                     writeErrorLogToDisk("Unhandled exception in executeQuery runnable", t);
                     Log.e(TAG, "Search query background execution encountered an exception. Bypassing safely.", t);
                     try {
@@ -326,7 +329,6 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                // Do not wipe UI until the new processed list is safely computed and ready to display
                 masterList.clear();
                 masterList.addAll(groupedList);
                 rebuildDisplayList();
@@ -377,9 +379,8 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
     }
 
     /**
-     * UNIVERSAL MASTER ENGINE: 100% Compatible with ALL Android Brands (OPPO, Vivo, Xiaomi, Samsung, Huawei, Pixel).
-     * Bypasses OEM MediaStore bugs by querying 4 distinct system URIs, validating physical file timestamps,
-     * merging Dual-App paths (/storage/emulated/999/), and sorting 100% inside Java RAM.
+     * UNIVERSAL MASTER ENGINE: 100% OEM-Agnostic & ColorOS / OPPO Safe.
+     * Prevents SQLiteException by using dynamic projections based on table URI.
      */
     private List<SearchResult> executeQueryWithMediaStore(QueryParameters params) {
         List<SearchResult> masterResults = new ArrayList<>();
@@ -401,8 +402,6 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
                 masterResults.addAll(querySingleUriSafely(MediaStore.Files.getContentUri("external"), params, -1, processedPaths));
             }
 
-            // Mechanism 2 Fail-Safe Switch: If MediaStore returns empty or sparse results for non-media categories,
-            // we trigger our seamless fallback filesystem scan.
             boolean isNonMediaCategory = "documents".equals(currentFilterType) || "archives".equals(currentFilterType) || "other".equals(currentFilterType) || "all".equals(currentFilterType);
             if (isNonMediaCategory && masterResults.size() < 3) {
                 writeErrorLogToDisk("MediaStore returned sparse/empty results (" + masterResults.size() + ") for category: " + currentFilterType + ". Fallback deep scan initiated.", null);
@@ -415,7 +414,6 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
                 }
             }
 
-            // Universal App-Side Java Sorting (Completely OEM-Agnostic)
             Collections.sort(masterResults, new Comparator<SearchResult>() {
                 @Override
                 public int compare(SearchResult r1, SearchResult r2) {
@@ -443,7 +441,6 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
                 addFilterClauses(selection, selectionArgs);
             }
 
-            // ALWAYS exclude files inside HFMRecycleBin to eliminate phantom empty thumbnails
             if (selection.length() > 0) selection.append(" AND ");
             selection.append(MediaStore.Files.FileColumns.DATA + " NOT LIKE ?");
             selectionArgs.add("%/HFMRecycleBin/%");
@@ -461,60 +458,76 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
                 selectionArgs.add("%" + params.folderPath + "%");
             }
 
-            String[] projection = {
-                MediaStore.Files.FileColumns._ID,
-                MediaStore.Files.FileColumns.MEDIA_TYPE,
-                MediaStore.Files.FileColumns.DATE_MODIFIED,
-                MediaStore.Files.FileColumns.DISPLAY_NAME,
-                MediaStore.Files.FileColumns.DATA
-            };
+            // DYNAMIC PROJECTION FIX FOR OPPO / COLOROS / VIVO SQLITE CRASHES:
+            // Table-specific URIs (images, video, audio) do NOT contain column 'media_type'.
+            // Only 'files' URI contains column 'media_type'.
+            boolean isFilesUri = queryUri.equals(MediaStore.Files.getContentUri("external"));
+            String[] projection;
+            if (isFilesUri) {
+                projection = new String[] {
+                    MediaStore.Files.FileColumns._ID,
+                    MediaStore.Files.FileColumns.MEDIA_TYPE,
+                    MediaStore.Files.FileColumns.DATE_MODIFIED,
+                    MediaStore.Files.FileColumns.DISPLAY_NAME,
+                    MediaStore.Files.FileColumns.DATA
+                };
+            } else {
+                projection = new String[] {
+                    MediaStore.Files.FileColumns._ID,
+                    MediaStore.Files.FileColumns.DATE_MODIFIED,
+                    MediaStore.Files.FileColumns.DISPLAY_NAME,
+                    MediaStore.Files.FileColumns.DATA
+                };
+            }
 
-            // Pass null as sortOrder to avoid OPPO/Vivo/ColorOS SQL query parser crash
             cursor = getContentResolver().query(queryUri, projection, selection.toString(), selectionArgs.toArray(new String[0]), null);
 
             if (cursor != null) {
                 int idColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID);
-                int mediaTypeColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE);
+                int mediaTypeColumn = isFilesUri ? cursor.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE) : -1;
                 int dateModifiedColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED);
                 int displayNameColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME);
                 int dataColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA);
 
                 while (cursor.moveToNext()) {
-                    long id = (idColumn != -1) ? cursor.getLong(idColumn) : -1;
-                    int mediaType = (overrideMediaType != -1) ? overrideMediaType : ((mediaTypeColumn != -1) ? cursor.getInt(mediaTypeColumn) : 0);
-                    long dateModifiedSeconds = (dateModifiedColumn != -1) ? cursor.getLong(dateModifiedColumn) : 0;
-                    String displayName = (displayNameColumn != -1) ? cursor.getString(displayNameColumn) : "Unknown";
-                    String path = (dataColumn != -1) ? cursor.getString(dataColumn) : null;
+                    try {
+                        long id = (idColumn != -1) ? cursor.getLong(idColumn) : -1;
+                        int mediaType = (overrideMediaType != -1) ? overrideMediaType : ((mediaTypeColumn != -1) ? cursor.getInt(mediaTypeColumn) : 0);
+                        long dateModifiedSeconds = (dateModifiedColumn != -1) ? cursor.getLong(dateModifiedColumn) : 0;
+                        String displayName = (displayNameColumn != -1) ? cursor.getString(displayNameColumn) : "Unknown";
+                        String path = (dataColumn != -1) ? cursor.getString(dataColumn) : null;
 
-                    if (path == null || processedPaths.contains(path)) {
-                        continue;
+                        if (path == null || processedPaths.contains(path)) {
+                            continue;
+                        }
+
+                        File actualFile = new File(path);
+                        if (!actualFile.exists()) {
+                            continue;
+                        }
+
+                        long lastModifiedMillis = dateModifiedSeconds * 1000;
+                        long filesystemDate = actualFile.lastModified();
+                        if (lastModifiedMillis <= 0 || filesystemDate > lastModifiedMillis) {
+                            lastModifiedMillis = filesystemDate;
+                        }
+
+                        Uri contentUri;
+                        if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE) {
+                            contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                        } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
+                            contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id);
+                        } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO) {
+                            contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
+                        } else {
+                            contentUri = ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"), id);
+                        }
+
+                        processedPaths.add(path);
+                        results.add(new SearchResult(contentUri, id, lastModifiedMillis, displayName, path));
+                    } catch (Exception rowEx) {
+                        Log.e(TAG, "Cursor row iteration exception safely bypassed: " + rowEx.getMessage());
                     }
-
-                    File actualFile = new File(path);
-                    if (!actualFile.exists()) {
-                        continue; // Skip ghost entries that no longer exist on disk
-                    }
-
-                    // Mechanism 3 Fallback: Default to file lastModified timestamp if MediaStore timestamp returns null/0
-                    long lastModifiedMillis = dateModifiedSeconds * 1000;
-                    long filesystemDate = actualFile.lastModified();
-                    if (lastModifiedMillis <= 0 || filesystemDate > lastModifiedMillis) {
-                        lastModifiedMillis = filesystemDate;
-                    }
-
-                    Uri contentUri;
-                    if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE) {
-                        contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
-                    } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
-                        contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id);
-                    } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO) {
-                        contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
-                    } else {
-                        contentUri = ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"), id);
-                    }
-
-                    processedPaths.add(path);
-                    results.add(new SearchResult(contentUri, id, lastModifiedMillis, displayName, path));
                 }
             }
         } catch (Exception e) {
@@ -540,8 +553,9 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
         rootsToScan.add(new File(externalStorage, "Telegram"));
         rootsToScan.add(new File(externalStorage, "DCIM"));
         rootsToScan.add(new File(externalStorage, "Pictures"));
+        rootsToScan.add(new File(externalStorage, "Documents"));
         rootsToScan.add(new File(externalStorage, "DCIM/Camera"));
-        rootsToScan.add(externalStorage); // Scan general storage for documents and archives
+        rootsToScan.add(externalStorage);
 
         File dualAppStorage = new File("/storage/emulated/999");
         if (dualAppStorage.exists() && dualAppStorage.canRead()) {
@@ -549,12 +563,15 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
              rootsToScan.add(new File(dualAppStorage, "Android/media/com.whatsapp/WhatsApp"));
              rootsToScan.add(new File(dualAppStorage, "DCIM"));
              rootsToScan.add(new File(dualAppStorage, "Download"));
+             rootsToScan.add(new File(dualAppStorage, "Documents"));
+             rootsToScan.add(dualAppStorage);
         }
 
         File parallelAppStorage = new File("/storage/emulated/10");
         if (parallelAppStorage.exists() && parallelAppStorage.canRead()) {
              rootsToScan.add(new File(parallelAppStorage, "WhatsApp"));
              rootsToScan.add(new File(parallelAppStorage, "DCIM"));
+             rootsToScan.add(parallelAppStorage);
         }
 
         for (File root : rootsToScan) {
@@ -574,7 +591,7 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
 
     private void scanDirectory(File directory, QueryParameters params, List<SearchResult> results) {
         if (directory.getName().equalsIgnoreCase("HFMRecycleBin")) {
-            return; // Recycle Bin skip preservation
+            return;
         }
 
         File[] files = directory.listFiles();
@@ -694,7 +711,7 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
                     String daySpecifier = m2_img.group(2);
                     if ("today".equals(daySpecifier)) {
                         params.setDateRange(getStartOfToday(), getEndOfToday());
-                    } else { // yesterday
+                    } else { 
                         params.setDateRange(getStartOfYesterday(), getEndOfYesterday());
                     }
                     return params;
@@ -1441,7 +1458,6 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
             }
         });
 
-        // GLITCH 4 FIX: Support multi-file batch drop directly from search selection
         sendToDropZoneButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -1591,7 +1607,6 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
         
         final AutoCompleteTextView receiverUsernameInput = dialogView.findViewById(R.id.edit_text_receiver_username);
 
-        // GLITCH 3 FIX: Bind Auto-Complete Dropdown using EncryptionHelper
         EncryptionHelper.getInstance(this).setupAutoComplete(this, receiverUsernameInput);
 
         builder.setView(dialogView)
@@ -1602,7 +1617,6 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
                         if (receiverUsername.isEmpty()) {
                             Toast.makeText(SearchActivity.this, "Receiver username cannot be empty.", Toast.LENGTH_SHORT).show();
                         } else {
-                            // GLITCH 3 FIX: Save receiver username to local preferences
                             EncryptionHelper.getInstance(SearchActivity.this).saveReceiverUsername(receiverUsername);
                             showSenderWarningDialog(receiverUsername, filesToSend);
                         }
@@ -1686,10 +1700,8 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
             return;
         }
 
-        // GLITCH 3 FIX: Save username to history
         EncryptionHelper.getInstance(this).saveReceiverUsername(receiverUsername);
 
-        // GLITCH 4 FIX: Pass full list of files to SenderService in a single batch
         Intent intent = new Intent(this, SenderService.class);
         intent.setAction(SenderService.ACTION_START_SEND);
         intent.putStringArrayListExtra(SenderService.EXTRA_FILE_PATHS, filePaths);
@@ -1849,7 +1861,12 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
             sb.append("=== HFM DIAGNOSTIC LOG ===\n");
             sb.append("Timestamp: ").append(new Date().toString()).append("\n");
             sb.append("Filter Type: ").append(currentFilterType).append("\n");
-            sb.append("Device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL).append("\n");
+            sb.append("Device Manufacturer: ").append(Build.MANUFACTURER).append("\n");
+            sb.append("Device Model: ").append(Build.MODEL).append("\n");
+            sb.append("Device Product: ").append(Build.PRODUCT).append("\n");
+            sb.append("Android SDK INT: ").append(Build.VERSION.SDK_INT).append("\n");
+            sb.append("Android Release: ").append(Build.VERSION.RELEASE).append("\n");
+            sb.append("Display Build: ").append(Build.DISPLAY).append("\n");
             if (message != null) {
                 sb.append("Message: ").append(message).append("\n");
             }
