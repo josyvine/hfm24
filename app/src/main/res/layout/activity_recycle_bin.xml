@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/appBackgroundColor">
+
+    <!-- Top Bar with Back Button, Title, and Action Buttons -->
+    <RelativeLayout
+        android:id="@+id/top_bar_recycle_bin"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="?attr/appPrimaryColor"
+        android:elevation="4dp">
+
+        <!-- Normal State Toolbar Container -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <ImageButton
+                android:id="@+id/back_button_recycle_bin"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Back"
+                android:src="@drawable/arrow_back_24px" />
+
+            <!-- New Enhancement: Recycle Bin Icon beside Back Arrow (Forced to Visible) -->
+            <ImageView
+                android:id="@+id/recycle_bin_icon"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_toEndOf="@id/back_button_recycle_bin"
+                android:layout_centerVertical="true"
+                android:layout_marginStart="4dp"
+                android:contentDescription="Recycle Bin Icon"
+                android:src="@drawable/delete_24px"
+                android:tint="?attr/appHeaderTextColor"
+                android:visibility="visible" />
+
+            <!-- Original Title View (Forced to Gone to prevent overlapping) -->
+            <TextView
+                android:id="@+id/title_recycle_bin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_toEndOf="@id/back_button_recycle_bin"
+                android:layout_centerVertical="true"
+                android:layout_marginStart="16dp"
+                android:text="Recycle Bins"
+                android:textColor="?attr/appHeaderTextColor"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <!-- Action Button Group on Far Right -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_alignParentEnd="true"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingEnd="8dp">
+
+                <!-- Toggle Grid/List layout mode -->
+                <ImageButton
+                    android:id="@+id/btn_toggle_layout_recycle_bin"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Toggle View Mode"
+                    android:src="@drawable/grid_view_24px"
+                    android:tint="?attr/appHeaderTextColor" />
+
+                <!-- Sort drop-down menu -->
+                <ImageButton
+                    android:id="@+id/btn_sort_recycle_bin"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Sort Items"
+                    android:src="@drawable/sort_24px"
+                    android:tint="?attr/appHeaderTextColor" />
+
+            </LinearLayout>
+        </RelativeLayout>
+
+        <!-- Selection State Header Container (replaces standard state when files are selected) -->
+        <LinearLayout
+            android:id="@+id/selection_header_layout_recycle_bin"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="?attr/appPrimaryColor"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageButton
+                android:id="@+id/btn_close_selection_recycle_bin"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Close Selection"
+                android:src="@drawable/arrow_back_24px"
+                android:tint="?attr/appHeaderTextColor" />
+
+            <TextView
+                android:id="@+id/tv_selection_count_recycle_bin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:text="0 selected"
+                android:textColor="?attr/appHeaderTextColor"
+                android:textSize="18dp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- Bottom Action Bar (Houses Restore & Delete buttons during selection mode) -->
+    <LinearLayout
+        android:id="@+id/bottom_action_bar_recycle_bin"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_alignParentBottom="true"
+        android:background="?attr/appPrimaryColor"
+        android:orientation="horizontal"
+        android:weightSum="2"
+        android:elevation="8dp"
+        android:visibility="gone"
+        android:padding="8dp">
+
+        <!-- Restore selected files Button -->
+        <Button
+            android:id="@+id/btn_restore_recycle_bin"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:background="?attr/appPrimaryColor"
+            android:textColor="?attr/appHeaderTextColor"
+            android:text="Restore"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:drawableStart="@drawable/arrow_back_24px"
+            android:drawableTint="?attr/appHeaderTextColor"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp" />
+
+        <!-- Delete selected files permanently Button -->
+        <Button
+            android:id="@+id/btn_delete_selected_recycle_bin"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:background="?attr/appPrimaryColor"
+            android:textColor="?attr/appHeaderTextColor"
+            android:text="Delete"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:drawableStart="@drawable/delete_24px"
+            android:drawableTint="?attr/appHeaderTextColor"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp" />
+
+    </LinearLayout>
+
+    <!-- List of files/folders inside the recycle bin -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycle_bin_recycler_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/top_bar_recycle_bin"
+        android:layout_above="@id/bottom_action_bar_recycle_bin"
+        android:padding="8dp"
+        android:clipToPadding="false" />
+
+    <!-- Empty View displayed when recycle folders contain no elements -->
+    <TextView
+        android:id="@+id/empty_view_recycle_bin"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:text="Recycle Bin is empty."
+        android:textColor="@android:color/darker_gray"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
+</RelativeLayout>
