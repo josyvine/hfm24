@@ -1,5 +1,6 @@
 package com.vineyard.hfm.app;
 
+import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.util.Log;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 
@@ -82,6 +84,25 @@ public class AppLogger {
         log(tag, metricMessage, null);
     }
 
+    public static void logQueryResult(String tag, Uri uri, String filterType, int resultCount, long durationMs, boolean usedFallback) {
+        String queryMsg = String.format(Locale.US, "[QUERY_METRIC] URI: %s | Filter: %s | Found: %d items | Time: %d ms | Fallback: %b",
+                uri != null ? uri.toString() : "null",
+                filterType != null ? filterType : "none",
+                resultCount,
+                durationMs,
+                usedFallback);
+        log(tag, queryMsg, null);
+    }
+
+    public static void logStorageScan(String tag, String rootPath, String category, int filesFound, long durationMs) {
+        String scanMsg = String.format(Locale.US, "[STORAGE_SCAN] Path: %s | Category: %s | Scanned: %d files | Time: %d ms",
+                rootPath != null ? rootPath : "unknown",
+                category != null ? category : "all",
+                filesFound,
+                durationMs);
+        log(tag, scanMsg, null);
+    }
+
     public static void logSystemInfo(String tag) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== SYSTEM DIAGNOSTIC INFO ===\n");
@@ -89,9 +110,15 @@ public class AppLogger {
         sb.append("Model: ").append(Build.MODEL).append("\n");
         sb.append("Device: ").append(Build.DEVICE).append("\n");
         sb.append("Brand: ").append(Build.BRAND).append("\n");
+        sb.append("Product: ").append(Build.PRODUCT).append("\n");
+        sb.append("Hardware: ").append(Build.HARDWARE).append("\n");
         sb.append("Android SDK: ").append(Build.VERSION.SDK_INT).append("\n");
         sb.append("Build Release: ").append(Build.VERSION.RELEASE).append("\n");
         sb.append("Display Build: ").append(Build.DISPLAY).append("\n");
+        sb.append("Fingerprint: ").append(Build.FINGERPRINT).append("\n");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            sb.append("Supported ABIs: ").append(Arrays.toString(Build.SUPPORTED_ABIS)).append("\n");
+        }
         sb.append("==============================");
         log(tag, sb.toString());
     }
