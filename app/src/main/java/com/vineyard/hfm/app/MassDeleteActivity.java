@@ -259,6 +259,10 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                     final QueryParameters params = parseQuery(query);
                     List<MassDeleteAdapter.SearchResult> mediaStoreResults = executeQueryWithMediaStore(params);
 
+                    if (Thread.currentThread().isInterrupted()) {
+                        return;
+                    }
+
                     if (!mediaStoreResults.isEmpty()) {
                         long durationMs = System.currentTimeMillis() - startTimeMs;
                         writeErrorLogToDisk("MediaStore returned " + mediaStoreResults.size() + " results in " + durationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]", null);
@@ -364,7 +368,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
 
     /**
      * UNIVERSAL MASTER ENGINE: 100% OEM-Agnostic & ColorOS / OPPO Safe.
-     * Bypasses column missing crashes by dynamically adjusting SQL projections.
+     * Fast query execution + binder overflow protection for All/Other filters.
      */
     private List<MassDeleteAdapter.SearchResult> executeQueryWithMediaStore(QueryParameters params) {
         List<MassDeleteAdapter.SearchResult> masterResults = new ArrayList<>();
@@ -437,16 +441,21 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
             selection.append(MediaStore.Files.FileColumns.DATA + " NOT LIKE ?");
             selectionArgs.add("%/HFMRecycleBin/%");
 
+            // Exclude systemic pictorial/thumbnail cache directories on ColorOS to prevent Binder buffer lock
+            boolean isFilesUri = queryUri.equals(MediaStore.Files.getContentUri("external"));
+            if (isFilesUri) {
+                if (selection.length() > 0) selection.append(" AND ");
+                selection.append(MediaStore.Files.FileColumns.DATA + " NOT LIKE ? AND " + MediaStore.Files.FileColumns.DATA + " NOT LIKE ?");
+                selectionArgs.add("%/Pictorial/offline/%");
+                selectionArgs.add("%/.cache/%");
+            }
+
             if (params.folderPath != null && !params.folderPath.isEmpty()) {
                 if (selection.length() > 0) selection.append(" AND ");
                 selection.append(MediaStore.Files.FileColumns.DATA + " LIKE ?");
                 selectionArgs.add("%" + params.folderPath + "%");
             }
 
-            // DYNAMIC PROJECTION FIX FOR OPPO / COLOROS / VIVO SQLITE CRASHES:
-            // Table-specific URIs (images, video, audio) do NOT contain column 'media_type'.
-            // Only 'files' URI contains column 'media_type'.
-            boolean isFilesUri = queryUri.equals(MediaStore.Files.getContentUri("external"));
             String[] projection;
             if (isFilesUri) {
                 projection = new String[] {
@@ -475,6 +484,9 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                 int dataColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA);
 
                 while (cursor.moveToNext()) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        break; // Thread cancellation check to release SQLite read-lock immediately
+                    }
                     try {
                         long id = (idColumn != -1) ? cursor.getLong(idColumn) : -1;
                         int mediaType = (overrideMediaType != -1) ? overrideMediaType : ((mediaTypeColumn != -1) ? cursor.getInt(mediaTypeColumn) : 0);
@@ -486,16 +498,11 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                             continue;
                         }
 
-                        File actualFile = new File(path);
-                        if (!actualFile.exists()) {
-                            continue;
-                        }
-
+                        // HIGH-SPEED OPTIMIZATION FOR OPPO eMMC STORAGE:
+                        // Extract timestamp directly from cursor memory without hitting synchronous physical disk syscalls.
                         long finalTimestampMillis = dbDateModifiedSeconds * 1000;
-                        long fileSystemMillis = actualFile.lastModified();
-
-                        if (finalTimestampMillis <= 0 || fileSystemMillis > finalTimestampMillis) {
-                            finalTimestampMillis = fileSystemMillis;
+                        if (finalTimestampMillis <= 0) {
+                            finalTimestampMillis = System.currentTimeMillis();
                         }
 
                         Uri contentUri;
@@ -506,7 +513,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                         } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO) {
                             contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
                         } else {
-                            contentUri = Uri.fromFile(actualFile);
+                            contentUri = ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"), id);
                         }
 
                         processedPaths.add(path);
@@ -521,7 +528,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
             Log.e(TAG, "Error querying URI for MassDelete " + queryUri + ": " + e.getMessage());
         } finally {
             if (cursor != null) {
-                cursor.close();
+                cursor.close(); // Guarantees SQLite read-lock release on ColorOS
             }
         }
 
