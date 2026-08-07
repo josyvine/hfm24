@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light Theme Colors -->
+    <color name="lt_colorPrimary">#6200EE</color>
+    <color name="lt_colorPrimaryDark">#3700B3</color>
+    <color name="lt_colorAccent">#03DAC5</color>
+    <color name="lt_backgroundColor">#FFFFFF</color>
+    <color name="lt_textColor">#000000</color>
+    <color name="lt_headerTextColor">#FFFFFF</color>
+
+    <!-- Dark Theme Colors -->
+    <color name="dt_colorPrimary">#333742</color>
+    <color name="dt_colorPrimaryDark">#232732</color>
+    <color name="dt_colorAccent">#7986CB</color>
+    <color name="dt_backgroundColor">#121212</color>
+    <color name="dt_textColor">#EAEAEA</color>
+    <color name="dt_headerTextColor">#EAEAEA</color>
+
+    <!-- AMOLED Theme Colors -->
+    <color name="amoled_colorPrimary">#1F1F1F</color>
+    <color name="amoled_colorPrimaryDark">#000000</color>
+    <color name="amoled_colorAccent">#BB86FC</color>
+    <color name="amoled_backgroundColor">#000000</color>
+    <color name="amoled_textColor">#E1E1E1</color>
+    <color name="amoled_headerTextColor">#E1E1E1</color>
+
+    <!-- Nordic Theme Colors -->
+    <color name="nordic_colorPrimary">#4C566A</color>
+    <color name="nordic_colorPrimaryDark">#2E3440</color>
+    <color name="nordic_colorAccent">#88C0D0</color>
+    <color name="nordic_backgroundColor">#D8DEE9</color>
+    <color name="nordic_textColor">#2E3440</color>
+    <color name="nordic_headerTextColor">#ECEFF4</color>
+
+    <!-- Solarized Theme Colors -->
+    <color name="solarized_colorPrimary">#073642</color>
+    <color name="solarized_colorPrimaryDark">#002b36</color>
+    <color name="solarized_colorAccent">#268bd2</color>
+    <color name="solarized_backgroundColor">#fdf6e3</color>
+    <color name="solarized_textColor">#586e75</color>
+    <color name="solarized_headerTextColor">#eee8d5</color>
+</resources>
+
