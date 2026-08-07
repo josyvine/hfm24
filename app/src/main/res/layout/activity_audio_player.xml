@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- Top Bar -->
+    <RelativeLayout
+        android:id="@+id/top_bar_audio_player"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="#000000"
+        android:elevation="4dp">
+
+        <TextView
+            android:id="@+id/file_name_audio_player"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="16dp"
+            android:layout_toStartOf="@+id/delete_button_audio_player"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:text="Audio File Name"
+            android:textColor="@android:color/white"
+            android:textSize="18sp" />
+
+        <ImageButton
+            android:id="@+id/delete_button_audio_player"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_centerVertical="true"
+            android:layout_toStartOf="@+id/close_button_audio_player"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Delete Audio"
+            android:src="@drawable/delete_forever_24px"
+            android:tint="#FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/close_button_audio_player"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Close Audio Player"
+            android:src="@drawable/close_24px"
+            android:tint="#FFFFFF" />
+    </RelativeLayout>
+
+    <!-- Player UI -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@+id/footer_bar_audio_viewer"
+        android:layout_below="@id/top_bar_audio_player"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <ImageView
+            android:id="@+id/audio_art_placeholder"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:src="@drawable/audio_file_24px"
+            android:tint="#FFFFFF" />
+
+        <!-- SeekBar and Timers -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp">
+
+            <TextView
+                android:id="@+id/current_time_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:textColor="@android:color/white"
+                android:text="00:00" />
+
+            <SeekBar
+                android:id="@+id/seek_bar_audio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:layout_toStartOf="@+id/total_time_text"
+                android:layout_toEndOf="@+id/current_time_text"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"/>
+
+            <TextView
+                android:id="@+id/total_time_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:textColor="@android:color/white"
+                android:text="00:00" />
+        </RelativeLayout>
+
+        <!-- Controls -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/prev_button_audio"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/skip_previous_24px"
+                android:tint="#FFFFFF"
+                android:scaleType="fitCenter"/>
+
+            <ImageButton
+                android:id="@+id/play_pause_button_audio"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/play_arrow_24px"
+                android:tint="#FFFFFF"
+                android:layout_marginStart="24dp"
+                android:layout_marginEnd="24dp"
+                android:scaleType="fitCenter"/>
+
+            <ImageButton
+                android:id="@+id/next_button_audio"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/skip_next_24px"
+                android:tint="#FFFFFF"
+                android:scaleType="fitCenter"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- NEW FOOTER -->
+    <RelativeLayout
+        android:id="@+id/footer_bar_audio_viewer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="#000000"
+        android:padding="8dp"
+        android:elevation="4dp">
+
+        <LinearLayout
+            android:id="@+id/footer_buttons_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/open_with_button_audio"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Open With"
+                android:src="@drawable/open_in_new_24px"
+                android:tint="#FFFFFF" />
+
+            <ImageButton
+                android:id="@+id/share_button_audio"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Share"
+                android:src="@drawable/share_24px"
+                android:tint="#FFFFFF" />
+
+        </LinearLayout>
+
+        <!-- DELETION PROGRESS UI -->
+        <RelativeLayout
+            android:id="@+id/deletion_progress_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignTop="@id/footer_buttons_layout"
+            android:layout_alignBottom="@id/footer_buttons_layout"
+            android:background="#000000"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:id="@+id/deletion_progress_bar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="8dp"
+                android:layout_toStartOf="@+id/deletion_progress_text"
+                android:indeterminate="true" />
+
+            <TextView
+                android:id="@+id/deletion_progress_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:text="Deleting..."
+                android:textColor="@android:color/white" />
+        </RelativeLayout>
+
+    </RelativeLayout>
+
+</RelativeLayout>
