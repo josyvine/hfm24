@@ -247,7 +247,6 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
     }
 
     private synchronized void executeQuery(final String query) {
-        // Mechanism 1: Cancel any previously active background query task before submitting a new request
         if (currentSearchFuture != null) {
             currentSearchFuture.cancel(true);
         }
@@ -255,14 +254,17 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
         currentSearchFuture = searchExecutor.submit(new Runnable() {
             @Override
             public void run() {
+                long startTimeMs = System.currentTimeMillis();
                 try {
                     final QueryParameters params = parseQuery(query);
                     List<MassDeleteAdapter.SearchResult> mediaStoreResults = executeQueryWithMediaStore(params);
 
                     if (!mediaStoreResults.isEmpty()) {
+                        long durationMs = System.currentTimeMillis() - startTimeMs;
+                        writeErrorLogToDisk("MediaStore returned " + mediaStoreResults.size() + " results in " + durationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]", null);
                         updateUIWithResults(mediaStoreResults, params);
                     } else {
-                        writeErrorLogToDisk("MediaStore returned 0 results for query: " + query + " [Filter: " + currentFilterType + "]. Switching to deep scan.", null);
+                        writeErrorLogToDisk("MediaStore returned 0 results for query: [" + query + "] [Filter: " + currentFilterType + "]. Switching to deep scan.", null);
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
@@ -270,10 +272,11 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                             }
                         });
                         List<MassDeleteAdapter.SearchResult> fileSystemResults = performFallbackFileSearch(params);
+                        long durationMs = System.currentTimeMillis() - startTimeMs;
+                        writeErrorLogToDisk("Fallback deep disk scan returned " + fileSystemResults.size() + " results in " + durationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]", null);
                         updateUIWithResults(fileSystemResults, params);
                     }
                 } catch (Throwable t) {
-                    // Diagnostic Log Feature: Write stack trace to /Phone Storage/hfm log report/
                     writeErrorLogToDisk("Unhandled exception in executeQuery runnable", t);
                     Log.e(TAG, "Search query background execution encountered an exception. Bypassing safely.", t);
                     try {
@@ -294,7 +297,6 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                // Do not wipe UI until the new processed list is safely computed and ready to display
                 masterList.clear();
                 masterList.addAll(groupedList);
 
@@ -361,9 +363,8 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
     }
 
     /**
-     * UNIVERSAL MASTER ENGINE: 100% Compatible with ALL Android Brands (OPPO, Vivo, Xiaomi, Samsung, Huawei, Pixel).
-     * Bypasses OEM MediaStore bugs by querying 4 distinct system URIs, validating physical file timestamps,
-     * merging Dual-App paths (/storage/emulated/999/), and sorting 100% inside Java RAM.
+     * UNIVERSAL MASTER ENGINE: 100% OEM-Agnostic & ColorOS / OPPO Safe.
+     * Bypasses column missing crashes by dynamically adjusting SQL projections.
      */
     private List<MassDeleteAdapter.SearchResult> executeQueryWithMediaStore(QueryParameters params) {
         List<MassDeleteAdapter.SearchResult> masterResults = new ArrayList<>();
@@ -385,8 +386,6 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                 masterResults.addAll(querySingleUriForMassDelete(MediaStore.Files.getContentUri("external"), params, -1, processedPaths));
             }
 
-            // Mechanism 2 Fail-Safe Switch: If MediaStore returns empty or sparse results for non-media categories,
-            // we trigger our seamless fallback filesystem scan.
             boolean isNonMediaCategory = "documents".equals(currentFilterType) || "archives".equals(currentFilterType) || "other".equals(currentFilterType) || "all".equals(currentFilterType);
             if (isNonMediaCategory && masterResults.size() < 3) {
                 writeErrorLogToDisk("MediaStore returned sparse/empty results (" + masterResults.size() + ") for category: " + currentFilterType + ". Fallback deep scan initiated.", null);
@@ -398,7 +397,6 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                     }
                 }
             } else {
-                // Fallback Deep Disk Scan for Dual Apps (/storage/emulated/999/) and Unindexed Documents
                 List<MassDeleteAdapter.SearchResult> diskFallbackResults = performFallbackFileSearch(params);
                 for (MassDeleteAdapter.SearchResult fallbackItem : diskFallbackResults) {
                     if (fallbackItem.getPath() != null && !processedPaths.contains(fallbackItem.getPath())) {
@@ -408,7 +406,6 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                 }
             }
 
-            // Universal App-Side Java Sorting (Completely OEM-Agnostic)
             Collections.sort(masterResults, new Comparator<MassDeleteAdapter.SearchResult>() {
                 @Override
                 public int compare(MassDeleteAdapter.SearchResult r1, MassDeleteAdapter.SearchResult r2) {
@@ -436,7 +433,6 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                 addFilterClauses(selection, selectionArgs);
             }
 
-            // ALWAYS exclude files inside HFMRecycleBin to eliminate phantom empty thumbnails
             if (selection.length() > 0) selection.append(" AND ");
             selection.append(MediaStore.Files.FileColumns.DATA + " NOT LIKE ?");
             selectionArgs.add("%/HFMRecycleBin/%");
@@ -447,61 +443,77 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                 selectionArgs.add("%" + params.folderPath + "%");
             }
 
-            String[] projection = {
-                MediaStore.Files.FileColumns._ID,
-                MediaStore.Files.FileColumns.MEDIA_TYPE,
-                MediaStore.Files.FileColumns.DATE_MODIFIED,
-                MediaStore.Files.FileColumns.DISPLAY_NAME,
-                MediaStore.Files.FileColumns.DATA
-            };
+            // DYNAMIC PROJECTION FIX FOR OPPO / COLOROS / VIVO SQLITE CRASHES:
+            // Table-specific URIs (images, video, audio) do NOT contain column 'media_type'.
+            // Only 'files' URI contains column 'media_type'.
+            boolean isFilesUri = queryUri.equals(MediaStore.Files.getContentUri("external"));
+            String[] projection;
+            if (isFilesUri) {
+                projection = new String[] {
+                    MediaStore.Files.FileColumns._ID,
+                    MediaStore.Files.FileColumns.MEDIA_TYPE,
+                    MediaStore.Files.FileColumns.DATE_MODIFIED,
+                    MediaStore.Files.FileColumns.DISPLAY_NAME,
+                    MediaStore.Files.FileColumns.DATA
+                };
+            } else {
+                projection = new String[] {
+                    MediaStore.Files.FileColumns._ID,
+                    MediaStore.Files.FileColumns.DATE_MODIFIED,
+                    MediaStore.Files.FileColumns.DISPLAY_NAME,
+                    MediaStore.Files.FileColumns.DATA
+                };
+            }
 
-            // Pass null as sortOrder to avoid OPPO/Vivo/ColorOS SQL query parser crash
             cursor = getContentResolver().query(queryUri, projection, selection.toString(), selectionArgs.toArray(new String[0]), null);
 
             if (cursor != null) {
                 int idColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID);
-                int mediaTypeColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE);
+                int mediaTypeColumn = isFilesUri ? cursor.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE) : -1;
                 int displayNameColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME);
                 int dateModifiedColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED);
                 int dataColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA);
 
                 while (cursor.moveToNext()) {
-                    long id = (idColumn != -1) ? cursor.getLong(idColumn) : -1;
-                    int mediaType = (overrideMediaType != -1) ? overrideMediaType : ((mediaTypeColumn != -1) ? cursor.getInt(mediaTypeColumn) : 0);
-                    String displayName = (displayNameColumn != -1) ? cursor.getString(displayNameColumn) : "Unknown";
-                    long dbDateModifiedSeconds = (dateModifiedColumn != -1) ? cursor.getLong(dateModifiedColumn) : 0;
-                    String path = (dataColumn != -1) ? cursor.getString(dataColumn) : null;
+                    try {
+                        long id = (idColumn != -1) ? cursor.getLong(idColumn) : -1;
+                        int mediaType = (overrideMediaType != -1) ? overrideMediaType : ((mediaTypeColumn != -1) ? cursor.getInt(mediaTypeColumn) : 0);
+                        String displayName = (displayNameColumn != -1) ? cursor.getString(displayNameColumn) : "Unknown";
+                        long dbDateModifiedSeconds = (dateModifiedColumn != -1) ? cursor.getLong(dateModifiedColumn) : 0;
+                        String path = (dataColumn != -1) ? cursor.getString(dataColumn) : null;
 
-                    if (path == null || processedPaths.contains(path)) {
-                        continue;
+                        if (path == null || processedPaths.contains(path)) {
+                            continue;
+                        }
+
+                        File actualFile = new File(path);
+                        if (!actualFile.exists()) {
+                            continue;
+                        }
+
+                        long finalTimestampMillis = dbDateModifiedSeconds * 1000;
+                        long fileSystemMillis = actualFile.lastModified();
+
+                        if (finalTimestampMillis <= 0 || fileSystemMillis > finalTimestampMillis) {
+                            finalTimestampMillis = fileSystemMillis;
+                        }
+
+                        Uri contentUri;
+                        if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE) {
+                            contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                        } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
+                            contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id);
+                        } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO) {
+                            contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
+                        } else {
+                            contentUri = Uri.fromFile(actualFile);
+                        }
+
+                        processedPaths.add(path);
+                        results.add(new MassDeleteAdapter.SearchResult(contentUri, id, finalTimestampMillis, displayName, path));
+                    } catch (Exception rowEx) {
+                        Log.e(TAG, "Cursor row iteration exception safely bypassed: " + rowEx.getMessage());
                     }
-
-                    File actualFile = new File(path);
-                    if (!actualFile.exists()) {
-                        continue; // Skip ghost entries that no longer exist on disk
-                    }
-
-                    // Mechanism 3 Fallback: Default to file lastModified timestamp if MediaStore timestamp returns null/0
-                    long finalTimestampMillis = dbDateModifiedSeconds * 1000;
-                    long fileSystemMillis = actualFile.lastModified();
-
-                    if (finalTimestampMillis <= 0 || fileSystemMillis > finalTimestampMillis) {
-                        finalTimestampMillis = fileSystemMillis;
-                    }
-
-                    Uri contentUri;
-                    if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE) {
-                        contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
-                    } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
-                        contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id);
-                    } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO) {
-                        contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
-                    } else {
-                        contentUri = Uri.fromFile(actualFile);
-                    }
-
-                    processedPaths.add(path);
-                    results.add(new MassDeleteAdapter.SearchResult(contentUri, id, finalTimestampMillis, displayName, path));
                 }
             }
         } catch (Exception e) {
@@ -527,8 +539,9 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
         rootsToScan.add(new File(externalStorage, "Telegram"));
         rootsToScan.add(new File(externalStorage, "DCIM"));
         rootsToScan.add(new File(externalStorage, "Pictures"));
+        rootsToScan.add(new File(externalStorage, "Documents"));
         rootsToScan.add(new File(externalStorage, "DCIM/Camera"));
-        rootsToScan.add(externalStorage); // General disk fallback
+        rootsToScan.add(externalStorage);
 
         File dualAppStorage = new File("/storage/emulated/999");
         if (dualAppStorage.exists() && dualAppStorage.canRead()) {
@@ -536,12 +549,15 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
              rootsToScan.add(new File(dualAppStorage, "Android/media/com.whatsapp/WhatsApp"));
              rootsToScan.add(new File(dualAppStorage, "DCIM"));
              rootsToScan.add(new File(dualAppStorage, "Download"));
+             rootsToScan.add(new File(dualAppStorage, "Documents"));
+             rootsToScan.add(dualAppStorage);
         }
         
         File parallelAppStorage = new File("/storage/emulated/10");
         if (parallelAppStorage.exists() && parallelAppStorage.canRead()) {
              rootsToScan.add(new File(parallelAppStorage, "WhatsApp"));
              rootsToScan.add(new File(parallelAppStorage, "DCIM"));
+             rootsToScan.add(parallelAppStorage);
         }
 
         for (File root : rootsToScan) {
@@ -561,7 +577,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
 
     private void scanDirectory(File directory, QueryParameters params, List<MassDeleteAdapter.SearchResult> results) {
         if (directory.getName().equalsIgnoreCase("HFMRecycleBin")) {
-            return; // Recycle Bin skip preservation
+            return;
         }
 
         File[] files = directory.listFiles();
@@ -731,7 +747,6 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
     }
 
     private void initiateDeletionProcess() {
-        // Execute on Parallel Thread Pool to prevent global AsyncTask queue starvation
         new PreDeletionCheckTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     }
 
@@ -1139,7 +1154,6 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
             return;
         }
 
-        // Execute on Parallel Thread Pool to prevent global AsyncTask queue starvation
         new AsyncTask<Void, Void, Intent>() {
             @Override
             protected Intent doInBackground(Void... voids) {
@@ -1619,7 +1633,12 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
             sb.append("=== HFM DIAGNOSTIC LOG (MassDelete) ===\n");
             sb.append("Timestamp: ").append(new Date().toString()).append("\n");
             sb.append("Filter Type: ").append(currentFilterType).append("\n");
-            sb.append("Device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL).append("\n");
+            sb.append("Device Manufacturer: ").append(Build.MANUFACTURER).append("\n");
+            sb.append("Device Model: ").append(Build.MODEL).append("\n");
+            sb.append("Device Product: ").append(Build.PRODUCT).append("\n");
+            sb.append("Android SDK INT: ").append(Build.VERSION.SDK_INT).append("\n");
+            sb.append("Android Release: ").append(Build.VERSION.RELEASE).append("\n");
+            sb.append("Display Build: ").append(Build.DISPLAY).append("\n");
             if (message != null) {
                 sb.append("Message: ").append(message).append("\n");
             }
