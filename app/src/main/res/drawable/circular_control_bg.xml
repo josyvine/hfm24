@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <!-- Semi-transparent black background (50% opacity) -->
+    <solid android:color="#80000000" />
+    
+    <!-- Optional: Add a subtle padding so the icon doesn't touch the edges of the circle -->
+    <padding
+        android:left="8dp"
+        android:top="8dp"
+        android:right="8dp"
+        android:bottom="8dp" />
+</shape>
