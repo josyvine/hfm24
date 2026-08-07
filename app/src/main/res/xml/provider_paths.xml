@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Path for the secure, temporary playback cache for the Kill-Switch feature.
+         This allows sharing decrypted files from the app's internal cache with media players. -->
+    <cache-path
+        name="secure_playback_cache"
+        path="secure_cache/" />
+
+    <!-- Path for general external storage access.
+         This is a common requirement for sharing files selected from public directories.
+         The path "." represents the root of the external storage. -->
+    <external-path
+        name="external_files"
+        path="." />
+
+</paths>
