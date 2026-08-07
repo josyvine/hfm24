@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginVertical="3dp"
+    android:layout_marginHorizontal="8dp"
+    app:cardCornerRadius="6dp"
+    app:cardElevation="1dp"
+    app:cardBackgroundColor="?attr/appPrimaryColor"
+    android:foreground="?android:attr/selectableItemBackground">
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:padding="8dp">
+
+        <!-- File/Folder Icon / Media Preview Thumbnail (Left Aligned) -->
+        <ImageView
+            android:id="@+id/file_icon_picker"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:scaleType="centerCrop"
+            android:contentDescription="File List Preview Icon"
+            android:src="@drawable/delete_24px" />
+
+        <!-- Selection Checkbox (Right Aligned) -->
+        <CheckBox
+            android:id="@+id/file_checkbox_picker"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:layout_marginEnd="8dp"
+            android:clickable="false"
+            android:focusable="false"
+            android:visibility="gone" />
+
+        <!-- Text Label for File/Folder Name -->
+        <TextView
+            android:id="@+id/file_name_picker"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_toEndOf="@id/file_icon_picker"
+            android:layout_toStartOf="@id/file_checkbox_picker"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="?attr/appHeaderTextColor"
+            android:textSize="14sp" />
+
+        <!-- Selection Overlay Layer (Applied as an alpha-blended tint when selected) -->
+        <View
+            android:id="@+id/selection_overlay_picker"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#334F46E5"
+            android:visibility="gone" />
+
+    </RelativeLayout>
+</androidx.cardview.widget.CardView>
