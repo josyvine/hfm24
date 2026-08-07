@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="4dp"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="2dp"
+    app:cardBackgroundColor="?attr/appPrimaryColor"
+    android:foreground="?android:attr/selectableItemBackground">
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="124dp"
+        android:padding="2dp">
+
+        <!-- File/Folder Icon / Media Preview Thumbnail Frame -->
+        <ImageView
+            android:id="@+id/file_icon_picker"
+            android:layout_width="match_parent"
+            android:layout_height="88dp"
+            android:layout_alignParentTop="true"
+            android:scaleType="centerCrop"
+            android:contentDescription="File Preview Icon"
+            android:src="@drawable/delete_24px" />
+
+        <!-- Selection Overlay Layer (Semi-transparent color overlay when item is selected) -->
+        <View
+            android:id="@+id/selection_overlay_picker"
+            android:layout_width="match_parent"
+            android:layout_height="88dp"
+            android:layout_alignParentTop="true"
+            android:background="#664F46E5"
+            android:visibility="gone" />
+
+        <!-- Selection Checkbox (Positioned in the top right corner) -->
+        <CheckBox
+            android:id="@+id/file_checkbox_picker"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:layout_alignParentEnd="true"
+            android:layout_margin="4dp"
+            android:clickable="false"
+            android:focusable="false"
+            android:visibility="gone" />
+
+        <!-- Text Label for File/Folder Name -->
+        <TextView
+            android:id="@+id/file_name_picker"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_below="@id/file_icon_picker"
+            android:gravity="center"
+            android:paddingBottom="2dp"
+            android:paddingEnd="4dp"
+            android:paddingStart="4dp"
+            android:paddingTop="2dp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="?attr/appHeaderTextColor"
+            android:textSize="11sp" />
+
+    </RelativeLayout>
+</androidx.cardview.widget.CardView>
