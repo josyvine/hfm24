@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+  <head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1, user-scalable=no" />
+	<title>Hybrid File Manager — Deleter & Editor</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --muted:#9aa7bd; --accent:#4f46e5; --danger:#ef4444;
+    --glass: rgba(255,255,255,0.03);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  html,body{height:100%; margin:0; background:transparent; color:#e6eef8; overflow-x: hidden;}
+  .app{
+    max-width:1200px; width:100%; margin:22px auto; padding:18px; border-radius:12px; 
+    /* MODIFICATION: Made transparent to see the native view behind it */
+    background: transparent; 
+    box-shadow:0 8px 30px rgba(2,6,23,0.7);
+    height: calc(100% - 44px); display: flex; flex-direction: column;
+    position: relative;
+  }
+  header{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    margin-bottom: 18px;
+    flex-shrink: 0;
+  }
+  .app-title {
+      flex-grow: 1;
+      text-align: center;
+  }
+  .app-navigation {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    margin-bottom: 22px;
+    gap: 16px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .tabs{display:flex; gap:6px;}
+  .tab{padding:8px 14px; border-radius:10px; background:var(--glass); cursor:pointer; color:var(--muted); font-weight:600; user-select:none;}
+  .tab.active{background:linear-gradient(90deg,var(--accent),#7c3aed); color:white; box-shadow:0 6px 20px rgba(79,70,229,0.18)}
+  button.btn{background:var(--accent); color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:700}
+  button.btn:disabled { background: var(--muted); cursor: not-allowed; opacity: 0.6; }
+  button.ghost{background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--muted)}
+  .small{padding:6px 8px; font-size:13px}
+  
+  /* CRITICAL FIX #1: Make left column zero width, right column takes all space. This fixes the overlay issue. */
+  .panel{display:grid; grid-template-columns:0fr 1fr; gap:14px; flex-grow: 1; overflow: hidden;}
+  .card{background:transparent; border-radius:10px; padding:12px}
+
+  .left{
+    /* MODIFICATION: Made transparent to see the native view behind it */
+    background: transparent;
+    border-radius:10px;
+    padding:0;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #deleterView {
+    display: flex; flex-direction: column; height: 100%; overflow: hidden;
+    position: relative;
+    /* This view will now be an empty container, so it needs no background */
+    background: transparent;
+  }
+  .deleter-controls {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    z-index: 10;
+    background: rgba(30, 41, 59, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    color: #e6eef8;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    transition: transform 0.35s ease-in-out, opacity 0.3s ease-in-out;
+    transform: translateX(0);
+    opacity: 1;
+    /* The controls should not intercept clicks meant for the native grid below */
+    pointer-events: none;
+  }
+  /* Allow clicking on elements inside the controls panel */
+  .deleter-controls > * {
+      pointer-events: auto;
+  }
+
+  .deleter-controls.hidden-left {
+      transform: translateX(-110%);
+  }
+  
+  .deleter-controls .muted, .deleter-controls label {
+    color: #d1d9e6;
+    font-weight: 500;
+  }
+
+  .right{
+    background:rgba(255,255,255,0.01); 
+    border-radius:10px; 
+    padding:14px; 
+    color:var(--muted); 
+    display: flex;
+    flex-direction: column;
+  }
+  .right-content {
+      flex-grow: 1;
+      overflow-y: auto;
+  }
+  .footer {
+    padding-top: 10px;
+    margin-top: auto; /* Pushes to the bottom */
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--glass);
+  }
+  .footer-info {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .footer-actions {
+      display: flex;
+      gap: 8px;
+  }
+
+  .meta{font-size:12px; color:var(--muted)}
+  .inputs{display:flex; gap:8px; align-items:center; margin-top:8px}
+  input[type="number"], input[type="text"], select{background:transparent; border:1px solid rgba(255,255,255,0.1); padding:8px; border-radius:8px; color: #e6eef8; max-width: 100%;}
+  .danger{background:linear-gradient(90deg,var(--danger),#f97316); color:white}
+  .progresswrap{margin-top:10px}
+
+  .modal{position:fixed; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); z-index: 2010;}
+  .modal .box{width:520px; max-width:92%; padding:18px; background:linear-gradient(180deg,#041026, #06162a); border-radius:12px; box-shadow:0 12px 40px rgba(2,6,23,0.8)}
+  .modal .box h3 { color: #fff; margin-top: 0; }
+  .modal .theme-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .modal .theme-buttons .btn { width: 100%; padding: 12px; }
+  
+  .hidden{display:none !important;}
+  .muted{color:var(--muted)}
+  .note{font-size:12px; color:var(--muted); margin-top:8px}
+
+  .deleter-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .deleter-header-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .deleter-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .deleter-actions-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+  .icon-btn { background: var(--glass); border: 1px solid rgba(255, 255, 255, 0.06); color: var(--muted); padding: 6px; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* --- SLIDER MENU REVAMP --- */
+  .slider-menu {
+    position: fixed; top: 0; right: -100%; 
+    width: 80px; /* Adopted size from slider.html */
+    height: 100%; 
+    /* Transparent background style from left panel */
+    background: rgba(11, 18, 32, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-left: 1px solid var(--glass);
+    z-index: 2000; 
+    transition: right 0.3s ease; 
+    display: flex;
+    flex-direction: column; 
+    align-items: center;
+    padding: 12px 0;
+    overflow-y: auto; /* Enable vertical scrolling */
+    gap: 16px;
+  }
+  .slider-menu.active { right: 0; }
+  
+  /* Icon button styling */
+  .slider-icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 8px;
+    width: 68px;
+    transition: background 0.2s, color 0.2s;
+    user-select: none;
+  }
+  .slider-icon-btn svg { width: 28px; height: 28px; }
+  .slider-icon-btn span { font-size: 10px; font-weight: 600; }
+  .slider-icon-btn:hover { background: var(--glass); color: #fff; }
+  
+  .slider-divider { 
+    border: none; 
+    border-top: 1px solid var(--glass);
+    margin: 0;
+    width: 80%;
+  }
+  
+  .overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5); z-index: 1999; display: none;
+  }
+  .overlay.active { display: block; }
+  .swipe-area { position: fixed; top: 0; right: 0; width: 50px; height: 100%; z-index: 998; }
+
+  .help-content h3 { color: #fff; margin-top: 24px; margin-bottom: 8px; border-bottom: 1px solid var(--glass); padding-bottom: 6px; }
+  .help-content p { line-height: 1.6; margin-bottom: 12px; }
+  .help-content code { background: var(--glass); padding: 2px 6px; border-radius: 4px; font-family: monospace; color: #e6eef8; }
+  
+  @media (max-width: 960px) {
+    /* CRITICAL FIX #2: Hide the (now empty) left panel entirely on smaller screens. */
+    .left { display: none; }
+    .panel { grid-template-columns: 1fr; }
+    .right { margin-top: 14px; }
+    .app { height: auto; }
+  }
+
+  @media (max-width: 768px) {
+    .app { margin: 0; padding: 12px; border-radius: 0; box-shadow: none; height: 100%; }
+    .app-navigation { justify-content: center; }
+    .app-title { margin-left: 0; }
+  }
+</style>
+  </head>
+  <body>
+	<div class="app" id="app">
+	  <header>
+		<div class="header-left-controls" style="display: flex; gap: 8px; width: 88px; justify-content: flex-start;">
+		  <button class="icon-btn" id="leftPanelToggle" title="Toggle Controls Panel" style="display: none;"> <!-- Hide this button as it's not needed -->
+		  </button>
+		</div>
+		<div class="app-title">Hybrid File Manager</div>
+		<div class="header-right-placeholder" style="width: 88px;"></div>
+	  </header>
+
+	  <div class="slider-menu" id="sliderMenu">
+
+		<button class="slider-icon-btn" id="openFolderBtn" title="Open Folder">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+		  <span>Open</span>
+		</button>
+        <button class="slider-icon-btn" id="shareHubBtn" title="Share Files">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3z"/></svg>
+          <span>Share</span>
+        </button>
+        <!-- HFM Drop Button -->
+        <button class="slider-icon-btn" id="hfmDropBtn" title="HFM Messenger Drop">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            <span>Drop</span>
+        </button>
+
+        <hr class="slider-divider">
+
+        <button class="slider-icon-btn" id="hideFileBtn" title="Hide Files">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+		  <span>Hide</span>
+        </button>
+
+        <!-- STEALTH MANAGER BUTTON -->
+        <button class="slider-icon-btn" id="stealthBtn" title="Stealth Manager">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+          <span>Stealth</span>
+        </button>
+
+        <button class="slider-icon-btn" id="massDeleteBtn" title="Mass Select & Delete">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 11h6V5H4v6zm0 7h6v-6H4v6zm8 0h6v-6h-6v6zm0-18v6h6V5h-6z"/></svg>
+          <span>Mass Select</span>
+        </button>
+		<button class="slider-icon-btn" id="cleanCacheBtn" title="Clean Cache">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M15 16h4v2h-4v-2zm0-8h7v2h-7V8zm0 4h6v2h-6v-2zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12V5z"/></svg>
+		  <span>Clean</span>
+		</button>
+        <button class="slider-icon-btn" id="recycleBinBtn" title="Recycle Bin">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          <span>Recycle</span>
+        </button>
+        <button class="slider-icon-btn" id="readerBtn" title="File Reader">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg>
+          <span>Reader</span>
+        </button>
+        <button class="slider-icon-btn" id="storageMapBtn" title="Storage Map">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 11h6V5H4v6zm0 7h6v-6H4v6zm8 0h6v-6h-6v6zm0-18v6h6V5h-6z"/></svg>
+          <span>Storage Map</span>
+        </button>
+		<button class="slider-icon-btn" id="contactBtn" title="Contact Us">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+		  <span>Contact</span>
+		</button>
+        <hr class="slider-divider">
+        <!-- NEW GEMINI AI BUTTON -->
+        <button class="slider-icon-btn" id="geminiBtn" title="Gemini AI Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.5 14.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5zm3-5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5zm3 5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5z"/></svg>
+          <span>Gemini AI</span>
+        </button>
+        <button class="slider-icon-btn" id="themeBtn" title="Change Theme">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+          <span>Theme</span>
+        </button>
+		<button class="slider-icon-btn" id="helpBtn" title="Help">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg>
+		  <span>Help</span>
+		</button>
+	  </div>
+	  <div class="overlay" id="overlay"></div>
+	  <div class="swipe-area" id="swipeArea"></div>
+
+	  <nav class="app-navigation">
+		<div class="tabs"><div class="tab active" id="tab-deleter">File Deleter</div><div class="tab" id="tab-editor">Editor</div></div>
+	  </nav>
+
+	  <div class="panel">
+		<div class="left card">
+		  <div id="deleterView">
+			<div class="deleter-controls" style="pointer-events: none; opacity: 0;"> <!-- Hide the old controls as they are no longer used -->
+			  <div class="deleter-header"><div class="deleter-header-group"><div style="font-weight:700">Folder:</div><div id="folderLabel" class="muted">No folder open</div></div></div>
+			  <div class="deleter-actions">
+				<div class="deleter-actions-group"><label class="muted">From</label><input id="fromInput" type="number" min="1" value="1" style="width:70px" disabled/><label class="muted">To</label><input id="toInput" type="number" min="1" value="1" style="width:70px" disabled/><label class="muted">Passes</label><input id="passes" type="number" min="1" max="10" value="3" style="width:60px" /></div>
+				<button class="btn danger small" id="deleteBtn">Secure Delete</button>
+			  </div>
+			</div>
+		  </div>
+		  <div id="editorView" class="hidden"></div>
+		</div>
+		<div class="right card">
+		  <div class="right-content">
+			<!-- Right panel content is preserved -->
+            <h3>Instructions</h3>
+            <p>1. Swipe from the right edge to open the menu.</p>
+            <p>2. Tap 'Open' to select a folder. This will open a new screen.</p>
+            <p>3. On the new screen, you can see all your files. Use the buttons at the top to sort or filter them.</p>
+            <p>4. To select files, tap them individually. To select a range, long-press a file and drag your finger.</p>
+            <p>5. Use the delete button at the bottom of the pop-up screen to delete selected files.</p>
+		  </div>
+		  <div class="footer">
+			<div id="inspector" class="footer-info"></div>
+			<div class="footer-actions">
+			  <button class="icon-btn" id="openNativeSearchBtn" title="Open Native Search">
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+			  </button>
+			</div>
+		  </div>
+        </div>
+	  </div>
+
+	  <div id="helpView" class="hidden" style="display: flex; flex-direction: column; height: 100%; color: var(--muted);">
+		<div class="help-header" style="text-align: center; padding: 10px 0; flex-shrink: 0;"><h2 style="margin:0; color: #fff;">How to Use the App</h2></div>
+		<div class="help-content" style="flex-grow: 1; overflow-y: auto; padding: 0 24px;">
+
+          <!-- NEW HELP CONTENT START -->
+          <h3>The Main Screen & Navigation</h3>
+          <p>This screen is your main dashboard. To access all features, swipe from the right edge of the screen to open the slider menu. All major functions are launched from this menu into new, full-screen windows.</p>
+          <p>When the app starts, a <b>Daily Dashboard</b> will pop up, showing storage stats and a list of new files received today. You can tap on a category to explore and delete these new files.</p>
+          <p><b>NEW:</b> If you close the dashboard, you can reopen it any time by swiping down from the top of this main screen.</p>
+
+          <h3>Finding & Deleting Files</h3>
+          <p>There are two primary ways to find and delete files, both launched from the slider menu.</p>
+
+          <h3>1. Native File Search (via "Open" button)</h3>
+          <p>This is the most powerful way to find files. You can use natural language queries in the search bar at the bottom. Examples:</p>
+          <ul>
+			<li><code>WhatsApp today</code> - Finds all files from WhatsApp folders modified today.</li>
+			<li><code>Camera yesterday</code> - Finds all files in the Camera folder from yesterday.</li>
+			<li><code>Download 5 days ago</code> - Finds files in the Download folder from 5 days ago.</li>
+          </ul>
+          <p><b>Smart Deletion:</b> Some apps (like GPS cameras) create multiple versions of one photo (e.g., one with a map and one without). When you try to delete one, this app will automatically find all related "sibling" files and ask if you want to delete them all, preventing "ghost" files from reappearing later.</p>
+          <p><b>Features:</b> Pinch the screen to zoom in or out on the file grid. Use the filter button to narrow results by type (images, videos, etc.). Select a whole day's worth of files by checking the box on the date header.</p>
+
+          <h3>2. Mass Selection & Delete (via "Mass Select" button)</h3>
+          <p>This tool is designed for bulk deletion of large, sequential file sets. Use the search bar to define a folder and a range. For example: <code>Camera 1 to 200</code> will find all files in the Camera folder and automatically select the first 200 for deletion.</p>
+          <p><b>Features:</b> You can also select files by long-pressing on one file and dragging your finger across the grid to select a range.</p>
+
+          <h3>Advanced Security: Hiding Files with Rituals</h3>
+          <p>This feature allows you to encrypt and hide files, making them accessible only by performing a unique, multi-step "Ritual".</p>
+
+          <h3>Creating a Ritual</h3>
+          <p>Select the <b>Hide</b> icon from the menu. You will be shown a list of all files on your device. Select the files you want to hide and tap "Hide". You will then create your secret Ritual in 3 steps:</p>
+          <ol>
+			<li><b>Taps:</b> Tap the screen a specific number of times.</li>
+			<li><b>Shakes:</b> Shake your phone a specific number of times.</li>
+			<li><b>Orientation:</b> Hold your phone in a specific physical orientation and at a specific GPS location, then press "Lock Orientation".</li>
+          </ol>
+          <p><b>CRITICAL:</b> After locking the orientation, you will see a <code>Copy Data</code> button. You MUST press this and save the copied text in a secure place (like a password manager). This is your <b>Ritual Backup Data</b> and is the only way to recover your files if you forget the ritual or your phone's sensors stop working.</p>
+
+          <h3>Unlocking Hidden Files</h3>
+          <p>Tap the <b>Hide</b> icon from the menu. You will see a list of your existing Rituals. Select one to begin the unlocking process, where you must replicate the original 3 steps.</p>
+
+          <p><b>Recovery Options:</b></p>
+          <ul>
+			<li><b>Use Backup Data:</b> On the final (Orientation) unlock screen, there is a button to "Use Backup Data". If you cannot get a live sensor match, you can paste your saved Ritual Backup Data here to instantly decrypt and restore your files.</li>
+			<li><b>Map Fallback:</b> This is a secondary backup. First, you must set it up by authenticating with your fingerprint and picking a secret location on a world map. To unlock using this method, you must again authenticate with your fingerprint and then place the pin on the same secret location.</li>
+          </ul>
+
+          <h3>Storage Tools</h3>
+          <p><b>Storage Map:</b> Creates a visual treemap of your storage, showing which folders and files are taking up the most space. You can tap on any file block to open it.</p>
+          <p><b>Cache Cleaner:</b> Scans for and removes junk files, including app caches, old thumbnails, log files, and empty folders to free up space.</p>
+          <p><b>File Reader:</b> Finds all text-based documents and PDFs on your device and opens them in a simple, built-in viewer.</p>
+          <!-- NEW HELP CONTENT END -->
+
+		</div>
+		<div class="help-footer" style="text-align: center; padding: 20px;"><button class="btn" id="helpBackBtn" style="padding: 12px 24px;">Back to Manager</button></div>
+	  </div>
+    </div>
+
+    <!-- THEME SELECTION MODAL -->
+    <div id="themeModal" class="modal hidden">
+	  <div class="box">
+		<h3>Choose a Theme</h3>
+		<p class="muted">A restart is required for the new theme to take full effect across the entire app.</p>
+		<div class="theme-buttons">
+		  <button class="btn" id="setThemeLightBtn">Light</button>
+		  <button class="btn" id="setThemeDarkBtn">Dark</button>
+		  <button class="btn" id="setThemeAmoledBtn">AMOLED</button>
+		  <button class="btn" id="setThemeNordicBtn">Nordic</button>
+		  <button class="btn" id="setThemeSolarizedBtn">Solarized</button>
+		  <button class="btn ghost" id="closeThemeModalBtn">Cancel</button>
+		</div>
+	  </div>
+    </div>
+
+    <!-- HFM DROP MODAL WITH GOOGLE DRIVE & SETUP BUTTONS -->
+    <div id="dropModal" class="modal hidden">
+        <div class="box">
+            <h3>HFM Messenger Drop</h3>
+            <p class="muted">Ultra-Secure Polymorphic Data Shard System. Google Drive authentication required.</p>
+            <div class="theme-buttons" style="grid-template-columns: 1fr;">
+                <button class="btn ghost" id="driveAuthBtn" style="border-color: #4f46e5; color: #fff;">Sign In to Google Drive</button>
+                <button class="btn ghost hidden" id="viewDriveBtn" style="border-color: #10b981; color: #fff;">View My Drive</button>
+                <button class="btn" id="sendDropBtn">Send File via Drop</button>
+                <button class="btn" id="receiveDropBtn">Receive File via Drop</button>
+                <button class="btn ghost" id="modalSetupBtn" style="border-color: #4f46e5; color: #fff;">Setup Sender Network (JSON)</button>
+                <button class="btn ghost" id="modalNetworkQrBtn" style="border-color: #8b5cf6; color: #fff;">Show My Network QR (Option A)</button>
+                <button class="btn ghost" id="modalScanQrBtn" style="border-color: #10b981; color: #fff;">Scan QR Code to Receive</button>
+                <button class="btn ghost" id="regenerateDropIdBtn">Regenerate My HFM Session</button>
+                <button class="btn ghost" id="closeDropModalBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+
+    // --- Elements ---
+    const openFolderBtn = document.getElementById('openFolderBtn');
+    const shareHubBtn = document.getElementById('shareHubBtn');
+    const hfmDropBtn = document.getElementById('hfmDropBtn'); 
+    const panel = document.querySelector('.panel');
+    const helpBtn = document.getElementById('helpBtn');
+    const helpView = document.getElementById('helpView');
+    const helpBackBtn = document.getElementById('helpBackBtn');
+    const openNativeSearchBtn = document.getElementById('openNativeSearchBtn');
+    const contactBtn = document.getElementById('contactBtn');
+    const cleanCacheBtn = document.getElementById('cleanCacheBtn');
+    const recycleBinBtn = document.getElementById('recycleBinBtn');
+    const massDeleteBtn = document.getElementById('massDeleteBtn');
+    const readerBtn = document.getElementById('readerBtn');
+    const storageMapBtn = document.getElementById('storageMapBtn');
+    const hideFileBtn = document.getElementById('hideFileBtn');
+    const stealthBtn = document.getElementById('stealthBtn'); // NEW
+    const themeBtn = document.getElementById('themeBtn');
+    const themeModal = document.getElementById('themeModal');
+    const dropModal = document.getElementById('dropModal'); 
+    const geminiBtn = document.getElementById('geminiBtn');
+    
+    // Modal setup buttons
+    const modalSetupBtn = document.getElementById('modalSetupBtn');
+    const modalNetworkQrBtn = document.getElementById('modalNetworkQrBtn');
+    const modalScanQrBtn = document.getElementById('modalScanQrBtn');
+
+    // Drive Auth Variables
+    const driveAuthBtn = document.getElementById('driveAuthBtn');
+    const viewDriveBtn = document.getElementById('viewDriveBtn');
+    let isDriveAuthenticated = false;
+    
+    // --- INITIALIZATION ---
+    function initialize() {
+        openFolderBtn.onclick = function() { callAndroid('openSearch'); };
+        shareHubBtn.onclick = function() { callAndroid('openShareHub'); };
+        hfmDropBtn.onclick = openDropModal; 
+
+        // Modal Setup Listeners
+        if (modalSetupBtn) modalSetupBtn.onclick = function() { callAndroid('openSetup'); closeDropModal(); };
+        if (modalNetworkQrBtn) modalNetworkQrBtn.onclick = function() { callAndroid('generateNetworkQr'); closeDropModal(); };
+        if (modalScanQrBtn) modalScanQrBtn.onclick = function() { callAndroid('scanQrCode'); closeDropModal(); };
+
+        openNativeSearchBtn.onclick = function() { callAndroid('openSearch'); };
+        contactBtn.onclick = function() { callAndroid('openContactForm'); };
+        cleanCacheBtn.onclick = function() { callAndroid('clearCache'); };
+        recycleBinBtn.onclick = function() { callAndroid('openRecycleBin'); };
+        massDeleteBtn.onclick = function() { callAndroid('openMassDelete'); };
+        readerBtn.onclick = function() { callAndroid('openReader'); };
+        storageMapBtn.onclick = function() { callAndroid('openStorageMap'); };
+        hideFileBtn.onclick = function() { callAndroid('onHideIconTapped'); };
+        if (stealthBtn) stealthBtn.onclick = function() { callAndroid('openStealthManager'); }; // NEW
+        geminiBtn.onclick = function() { callAndroid('openApiKeyDialog'); };
+        
+        document.getElementById('tab-editor').onclick = function() { alert('Editor functionality placeholder.'); };
+        helpBtn.onclick = function() { panel.classList.add('hidden'); helpView.classList.remove('hidden'); closeSliderMenu(); };
+        helpBackBtn.onclick = function() { helpView.classList.add('hidden'); panel.classList.remove('hidden'); };
+        
+        // Theme button listeners
+        themeBtn.onclick = openThemeModal;
+        document.getElementById('closeThemeModalBtn').onclick = closeThemeModal;
+        document.getElementById('setThemeLightBtn').onclick = function() { applyTheme('light'); };
+        document.getElementById('setThemeDarkBtn').onclick = function() { applyTheme('dark'); };
+        document.getElementById('setThemeAmoledBtn').onclick = function() { applyTheme('amoled'); };
+        document.getElementById('setThemeNordicBtn').onclick = function() { applyTheme('nordic'); };
+        document.getElementById('setThemeSolarizedBtn').onclick = function() { applyTheme('solarized'); };
+
+        // Drop Modal listeners WITH AUTH GATE
+        document.getElementById('closeDropModalBtn').onclick = closeDropModal;
+        document.getElementById('sendDropBtn').onclick = function() { 
+            if(isDriveAuthenticated) {
+                callAndroid('sendViaDrop'); 
+                closeDropModal(); 
+            } else {
+                alert('Please Sign In to Google Drive first to use the Morphed File System.');
+            }
+        };
+        document.getElementById('receiveDropBtn').onclick = function() { callAndroid('receiveViaDrop'); closeDropModal(); };
+        document.getElementById('regenerateDropIdBtn').onclick = function() { callAndroid('regenerateHFMId'); closeDropModal(); };
+
+        // Drive Auth Button Listeners
+        driveAuthBtn.onclick = function() { callAndroid('toggleDriveAuth'); };
+        viewDriveBtn.onclick = function() { callAndroid('openDriveViewer'); closeDropModal(); };
+
+        checkStealthVisibility();
+        setupSwipeToRefresh();
+    }
+    
+    // EXPOSED FUNCTION FOR STEALTH VISIBILITY TOGGLING
+    function checkStealthVisibility() {
+        if (window.Android && typeof window.Android.isStealthHidden === 'function') {
+            const isHidden = window.Android.isStealthHidden();
+            if (isHidden) {
+                if (hideFileBtn) hideFileBtn.style.display = 'none';
+                if (stealthBtn) stealthBtn.style.display = 'none';
+            } else {
+                if (hideFileBtn) hideFileBtn.style.display = 'flex';
+                if (stealthBtn) stealthBtn.style.display = 'flex';
+            }
+        }
+    }
+
+    // EXPOSED FUNCTION FOR ANDROID TO UPDATE UI
+    window.updateDriveAuthStatus = function(isLoggedIn) {
+        isDriveAuthenticated = isLoggedIn;
+        if(isLoggedIn) {
+            driveAuthBtn.innerText = "Log Out of Google Drive";
+            driveAuthBtn.style.borderColor = "#ef4444"; 
+            viewDriveBtn.classList.remove('hidden');
+        } else {
+            driveAuthBtn.innerText = "Sign In to Google Drive";
+            driveAuthBtn.style.borderColor = "#4f46e5"; 
+            viewDriveBtn.classList.add('hidden');
+        }
+    };
+    
+    function log(msg){
+        if (window.Android) window.Android.log(String(msg));
+        console.log(msg);
+    }
+    
+    function callAndroid(functionName) {
+        if (window.Android && typeof window.Android[functionName] === 'function') {
+            log('Calling Android.' + functionName + '()');
+            window.Android[functionName]();
+            closeSliderMenu();
+        } else {
+            log('Android.' + functionName + '() not available.');
+        }
+    }
+
+    const sliderMenu = document.getElementById("sliderMenu");
+    const overlay = document.getElementById("overlay");
+    const swipeArea = document.getElementById("swipeArea");
+    function addSwipeListener(element, callback) {
+        let touchstartX = 0;
+        element.addEventListener('touchstart', function(e) { touchstartX = e.changedTouches[0].screenX; }, { passive: true });
+        element.addEventListener('touchend', function(e) { if (e.changedTouches[0].screenX < touchstartX - 50) callback('left'); });
+    }
+    function closeSliderMenu() {
+        sliderMenu.classList.remove("active"); 
+        overlay.classList.remove("active");
+    }
+    addSwipeListener(swipeArea, function() { 
+        sliderMenu.classList.add("active"); 
+        overlay.classList.add("active");
+    });
+    addSwipeListener(sliderMenu, function() { closeSliderMenu(); });
+    overlay.addEventListener("click", function() { 
+        closeSliderMenu(); 
+        closeThemeModal();
+        closeDropModal();
+    });
+
+    function setupSwipeToRefresh() {
+        let touchstartY = 0;
+        const swipeThreshold = 50; 
+        const startArea = 80; 
+
+        document.body.addEventListener('touchstart', function(e) {
+            if (window.scrollY === 0 && e.touches[0].clientY < startArea) {
+                touchstartY = e.touches[0].clientY;
+            } else {
+                touchstartY = 0; 
+            }
+        }, { passive: true });
+
+        document.body.addEventListener('touchend', function(e) {
+            if (touchstartY === 0) return; 
+
+            const touchendY = e.changedTouches[0].clientY;
+            if (touchendY > touchstartY + swipeThreshold) {
+                callAndroid('openDashboard');
+            }
+            touchstartY = 0;
+        }, { passive: true });
+    }
+
+    function openThemeModal() {
+        themeModal.classList.remove('hidden');
+        closeSliderMenu();
+    }
+    
+    function closeThemeModal() {
+        themeModal.classList.add('hidden');
+    }
+
+    function openDropModal() {
+        if(window.Android && typeof window.Android.isDriveLoggedIn === 'function') {
+            window.updateDriveAuthStatus(window.Android.isDriveLoggedIn());
+        }
+        dropModal.classList.remove('hidden');
+        closeSliderMenu();
+    }
+    
+    function closeDropModal() {
+        dropModal.classList.add('hidden');
+    }
+    
+    function applyTheme(themeName) {
+        if (window.Android && typeof window.Android.setTheme === 'function') {
+            window.Android.setTheme(themeName);
+        } else {
+            log('Cannot set theme. Android.setTheme() is not available.');
+        }
+        closeThemeModal();
+    }
+    
+    initialize();
+});
+</script>
+  </body>
+</html>
