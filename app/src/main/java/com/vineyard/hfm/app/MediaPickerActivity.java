@@ -34,6 +34,8 @@ import java.util.Set;
 
 public class MediaPickerActivity extends Activity {
 
+    private static final String TAG = "MediaPickerActivity";
+
     // UI Elements
     private ImageButton backButton;
     private TextView titleTextView, selectionCountTextView;
@@ -80,44 +82,44 @@ public class MediaPickerActivity extends Activity {
 
     private void setupRecyclerView() {
         adapter = new MediaPickerAdapter(this, mediaFileList, new MediaPickerAdapter.OnItemClickListener() {
-				@Override
-				public void onSelectionChanged() {
-					updateSelectionCount();
-				}
-			});
+            @Override
+            public void onSelectionChanged() {
+                updateSelectionCount();
+            }
+        });
         mediaRecyclerView.setLayoutManager(new GridLayoutManager(this, 3));
         mediaRecyclerView.setAdapter(adapter);
     }
 
     private void setupListeners() {
         backButton.setOnClickListener(new View.OnClickListener() {
-				@Override
-				public void onClick(View v) {
-					finish();
-				}
-			});
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        });
 
         sendButton.setOnClickListener(new View.OnClickListener() {
-				@Override
-				public void onClick(View v) {
-					ArrayList<String> selectedPaths = new ArrayList<>();
-					for (MediaPickerAdapter.FileItem item : adapter.getItems()) {
-						if (item.isSelected()) {
-							selectedPaths.add(item.getFile().getAbsolutePath());
-						}
-					}
+            @Override
+            public void onClick(View v) {
+                ArrayList<String> selectedPaths = new ArrayList<>();
+                for (MediaPickerAdapter.FileItem item : adapter.getItems()) {
+                    if (item.isSelected()) {
+                        selectedPaths.add(item.getFile().getAbsolutePath());
+                    }
+                }
 
-					if (selectedPaths.isEmpty()) {
-						Toast.makeText(MediaPickerActivity.this, "No files selected.", Toast.LENGTH_SHORT).show();
-						return;
-					}
+                if (selectedPaths.isEmpty()) {
+                    Toast.makeText(MediaPickerActivity.this, "No files selected.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
 
-					Intent resultIntent = new Intent();
-					resultIntent.putStringArrayListExtra("picked_files", selectedPaths);
-					setResult(Activity.RESULT_OK, resultIntent);
-					finish();
-				}
-			});
+                Intent resultIntent = new Intent();
+                resultIntent.putStringArrayListExtra("picked_files", selectedPaths);
+                setResult(Activity.RESULT_OK, resultIntent);
+                finish();
+            }
+        });
     }
 
     private void updateTitle() {
@@ -151,6 +153,7 @@ public class MediaPickerActivity extends Activity {
     protected void onDestroy() {
         if (mScanTask != null) {
             mScanTask.cancel(true);
+            AppLogger.log(TAG, "[THREAD_CANCELLED] MediaPickerActivity onDestroy called, current scan task cancelled.");
         }
         super.onDestroy();
     }
@@ -169,11 +172,14 @@ public class MediaPickerActivity extends Activity {
             String category = params[0];
             List<File> foundFiles = new ArrayList<>();
             ContentResolver contentResolver = getContentResolver();
+            long scanStartTimeMs = System.currentTimeMillis();
+
+            AppLogger.log(TAG, "MediaPicker scan started for category: " + category + " | Manufacturer: " + Build.MANUFACTURER + " | Model: " + Build.MODEL);
 
             Uri queryUri;
             String[] projection = {MediaStore.MediaColumns.DATA};
-            String selection = null;
-            String[] selectionArgs = null;
+            StringBuilder selectionBuilder = new StringBuilder();
+            List<String> selectionArgsList = new ArrayList<>();
 
             switch (category) {
                 case CategoryPickerActivity.CATEGORY_VIDEOS:
@@ -187,47 +193,60 @@ public class MediaPickerActivity extends Activity {
                     break;
                 case CategoryPickerActivity.CATEGORY_DOCUMENTS:
                     queryUri = MediaStore.Files.getContentUri("external");
-                    selection = MediaStore.Files.FileColumns.MIME_TYPE + " IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-                    selectionArgs = new String[]{
+                    selectionBuilder.append(MediaStore.Files.FileColumns.MIME_TYPE + " IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    selectionArgsList.addAll(Arrays.asList(
                         "application/pdf",
                         "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
                         "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", 
                         "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
                         "text/plain", "text/csv", "text/html"
-                    };
+                    ));
                     break;
                 default:
                     return foundFiles;
             }
 
+            // Exclude systemic recycle bin and ColorOS pictorial/offline wallpaper cache
+            if (selectionBuilder.length() > 0) selectionBuilder.append(" AND ");
+            selectionBuilder.append(MediaStore.Files.FileColumns.DATA + " NOT LIKE ? AND " + MediaStore.Files.FileColumns.DATA + " NOT LIKE ? AND " + MediaStore.Files.FileColumns.DATA + " NOT LIKE ?");
+            selectionArgsList.add("%/HFMRecycleBin/%");
+            selectionArgsList.add("%/Pictorial/offline/%");
+            selectionArgsList.add("%/.cache/%");
+
+            String selection = selectionBuilder.toString();
+            String[] selectionArgs = selectionArgsList.toArray(new String[0]);
+
+            Cursor cursor = null;
             try {
-                Cursor cursor = contentResolver.query(queryUri, projection, selection, selectionArgs, null);
+                cursor = contentResolver.query(queryUri, projection, selection, selectionArgs, null);
 
                 if (cursor != null) {
-                    try {
-                        int dataColumnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
-                        while (cursor.moveToNext()) {
-                            if (isCancelled()) {
-                                break;
-                            }
-                            try {
-                                if (dataColumnIndex != -1) {
-                                    String path = cursor.getString(dataColumnIndex);
-                                    if (path != null && !path.contains("/HFMRecycleBin/")) {
-                                        File file = new File(path);
-                                        // GHOST THUMBNAIL SUPPRESSION: Mandatory physical file verification
-                                        if (file.exists() && file.length() > 0) {
-                                            foundFiles.add(file);
-                                        }
+                    int dataColumnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
+                    while (cursor.moveToNext()) {
+                        if (isCancelled()) {
+                            AppLogger.log(TAG, "[THREAD_CANCELLED] MediaPicker scan task cancelled during cursor iteration.");
+                            break;
+                        }
+                        try {
+                            if (dataColumnIndex != -1) {
+                                String path = cursor.getString(dataColumnIndex);
+                                if (path != null) {
+                                    File file = new File(path);
+                                    // GHOST THUMBNAIL SUPPRESSION: Mandatory physical file verification
+                                    if (file.exists() && file.length() > 0) {
+                                        foundFiles.add(file);
                                     }
                                 }
-                            } catch (Exception rowEx) {
-                                Log.e("MediaPickerActivity", "Row extraction error safely bypassed: " + rowEx.getMessage());
                             }
+                        } catch (Exception rowEx) {
+                            Log.e(TAG, "Row extraction error safely bypassed: " + rowEx.getMessage());
                         }
-                    } finally {
-                        cursor.close();
                     }
+                }
+
+                long durationMs = System.currentTimeMillis() - scanStartTimeMs;
+                if (durationMs > 1000) {
+                    AppLogger.log(TAG, "[IN_FLIGHT_WARNING] MediaPicker query for category " + category + " executed in " + durationMs + " ms | Returned: " + foundFiles.size() + " items");
                 }
 
                 if (foundFiles.size() < 3) {
@@ -282,8 +301,16 @@ public class MediaPickerActivity extends Activity {
                 }
 
             } catch (Throwable t) {
+                AppLogger.logError(TAG, "ScanMediaTask background execution encountered an exception", t);
                 writeErrorLogToDisk("ScanMediaTask background execution encountered an exception", t);
-                Log.e("MediaPickerActivity", "ScanMediaTask background execution encountered an exception. Bypassing safely.", t);
+                Log.e(TAG, "ScanMediaTask background execution encountered an exception. Bypassing safely.", t);
+            } finally {
+                if (cursor != null) {
+                    cursor.close(); // Guarantees SQLite read-lock release on ColorOS
+                    if (isCancelled()) {
+                        AppLogger.log(TAG, "[THREAD_CANCELLED] MediaPicker cursor closed and SQLite handle released.");
+                    }
+                }
             }
 
             Collections.sort(foundFiles, new Comparator<File>() {
@@ -356,11 +383,11 @@ public class MediaPickerActivity extends Activity {
                 mediaFileList.clear();
                 mediaFileList.addAll(result);
                 adapter = new MediaPickerAdapter(MediaPickerActivity.this, mediaFileList, new MediaPickerAdapter.OnItemClickListener() {
-						@Override
-						public void onSelectionChanged() {
-							updateSelectionCount();
-						}
-					});
+                    @Override
+                    public void onSelectionChanged() {
+                        updateSelectionCount();
+                    }
+                });
                 mediaRecyclerView.setAdapter(adapter);
             }
         }
@@ -396,7 +423,7 @@ public class MediaPickerActivity extends Activity {
             fos.flush();
             fos.close();
         } catch (Exception e) {
-            Log.e("MediaPickerActivity", "Failed to write diagnostic log to disk", e);
+            Log.e(TAG, "Failed to write diagnostic log to disk", e);
         }
     }
 }
