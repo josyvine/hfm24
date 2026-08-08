@@ -214,7 +214,11 @@ public class MediaPickerActivity extends Activity {
                                 if (dataColumnIndex != -1) {
                                     String path = cursor.getString(dataColumnIndex);
                                     if (path != null && !path.contains("/HFMRecycleBin/")) {
-                                        foundFiles.add(new File(path));
+                                        File file = new File(path);
+                                        // GHOST THUMBNAIL SUPPRESSION: Mandatory physical file verification
+                                        if (file.exists() && file.length() > 0) {
+                                            foundFiles.add(file);
+                                        }
                                     }
                                 }
                             } catch (Exception rowEx) {
@@ -312,7 +316,9 @@ public class MediaPickerActivity extends Activity {
                 } else {
                     if (file.getName().startsWith(".")) continue;
                     if (isCategoryMatch(file.getName(), category)) {
-                        outList.add(file);
+                        if (file.exists() && file.length() > 0) {
+                            outList.add(file);
+                        }
                     }
                 }
             }
