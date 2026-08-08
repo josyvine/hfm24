@@ -384,7 +384,7 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
 
     /**
      * UNIVERSAL MASTER ENGINE: 100% OEM-Agnostic & ColorOS / OPPO Safe.
-     * Fast query execution + binder overflow protection for All/Other filters.
+     * Guarantees 0% ghost thumbnails via physical File.exists() verification.
      */
     private List<SearchResult> executeQueryWithMediaStore(QueryParameters params) {
         List<SearchResult> masterResults = new ArrayList<>();
@@ -513,11 +513,16 @@ public class SearchActivity extends Activity implements SearchAdapter.OnItemClic
                             continue;
                         }
 
-                        // HIGH-SPEED OPTIMIZATION FOR OPPO eMMC STORAGE:
-                        // Extract timestamp directly from cursor memory without hitting synchronous physical disk syscalls (File.exists / lastModified).
+                        // GHOST THUMBNAIL SUPPRESSION: Mandatory physical file verification
+                        File actualFile = new File(path);
+                        if (!actualFile.exists()) {
+                            continue; // Skip ghost entries that no longer exist on disk
+                        }
+
                         long lastModifiedMillis = dateModifiedSeconds * 1000;
-                        if (lastModifiedMillis <= 0) {
-                            lastModifiedMillis = System.currentTimeMillis();
+                        long filesystemDate = actualFile.lastModified();
+                        if (lastModifiedMillis <= 0 || filesystemDate > lastModifiedMillis) {
+                            lastModifiedMillis = filesystemDate;
                         }
 
                         Uri contentUri;
