@@ -103,6 +103,35 @@ public class AppLogger {
         log(tag, scanMsg, null);
     }
 
+    public static void logSearchStart(String tag, String query, String filterType) {
+        String searchStartMsg = String.format(Locale.US, "[SEARCH_START] Query: [%s] | Filter: %s | Device: %s %s (SDK %d)",
+                query != null ? query : "",
+                filterType != null ? filterType : "all",
+                Build.MANUFACTURER,
+                Build.MODEL,
+                Build.VERSION.SDK_INT);
+        log(tag, searchStartMsg, null);
+    }
+
+    public static void logSearchDelayWarning(String tag, String query, long durationMs) {
+        String warningMsg = String.format(Locale.US, "[IN_FLIGHT_WARNING] Search query [%s] execution time exceeded threshold: %d ms",
+                query != null ? query : "",
+                durationMs);
+        log(tag, warningMsg, null);
+    }
+
+    public static void logDatabaseLockError(String tag, Uri uri, Throwable throwable) {
+        String dbErrorMsg = String.format(Locale.US, "[SQLITE_LOCK_ERROR] Database/Binder buffer lock encountered on URI: %s",
+                uri != null ? uri.toString() : "null");
+        logError(tag, dbErrorMsg, throwable);
+    }
+
+    public static void logThreadCancellation(String tag, String operation) {
+        String cancelMsg = String.format(Locale.US, "[THREAD_CANCELLED] Task cancelled and native cursor handle released for operation: %s",
+                operation != null ? operation : "unknown");
+        log(tag, cancelMsg, null);
+    }
+
     public static void logSystemInfo(String tag) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== SYSTEM DIAGNOSTIC INFO ===\n");
