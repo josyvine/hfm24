@@ -368,7 +368,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
 
     /**
      * UNIVERSAL MASTER ENGINE: 100% OEM-Agnostic & ColorOS / OPPO Safe.
-     * Fast query execution + binder overflow protection for All/Other filters.
+     * Guarantees 0% ghost thumbnails via physical File.exists() verification.
      */
     private List<MassDeleteAdapter.SearchResult> executeQueryWithMediaStore(QueryParameters params) {
         List<MassDeleteAdapter.SearchResult> masterResults = new ArrayList<>();
@@ -498,11 +498,17 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                             continue;
                         }
 
-                        // HIGH-SPEED OPTIMIZATION FOR OPPO eMMC STORAGE:
-                        // Extract timestamp directly from cursor memory without hitting synchronous physical disk syscalls.
+                        // GHOST THUMBNAIL SUPPRESSION: Mandatory physical file verification
+                        File actualFile = new File(path);
+                        if (!actualFile.exists()) {
+                            continue; // Skip ghost entries that no longer exist on disk
+                        }
+
                         long finalTimestampMillis = dbDateModifiedSeconds * 1000;
-                        if (finalTimestampMillis <= 0) {
-                            finalTimestampMillis = System.currentTimeMillis();
+                        long fileSystemMillis = actualFile.lastModified();
+
+                        if (finalTimestampMillis <= 0 || fileSystemMillis > finalTimestampMillis) {
+                            finalTimestampMillis = fileSystemMillis;
                         }
 
                         Uri contentUri;
@@ -513,7 +519,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                         } else if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO) {
                             contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
                         } else {
-                            contentUri = ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"), id);
+                            contentUri = Uri.fromFile(actualFile);
                         }
 
                         processedPaths.add(path);
