@@ -249,7 +249,10 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
     private synchronized void executeQuery(final String query) {
         if (currentSearchFuture != null) {
             currentSearchFuture.cancel(true);
+            AppLogger.log(TAG, "[THREAD_CANCELLED] Previous mass delete scan task cancelled for query: [" + query + "]");
         }
+
+        AppLogger.log(TAG, "Mass Delete scan started: [" + query + "] | Filter: " + currentFilterType + " | Manufacturer: " + Build.MANUFACTURER + " | Model: " + Build.MODEL);
 
         currentSearchFuture = searchExecutor.submit(new Runnable() {
             @Override
@@ -260,11 +263,16 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                     List<MassDeleteAdapter.SearchResult> mediaStoreResults = executeQueryWithMediaStore(params);
 
                     if (Thread.currentThread().isInterrupted()) {
+                        AppLogger.log(TAG, "[THREAD_CANCELLED] In-flight mass delete scan task interrupted.");
                         return;
                     }
 
+                    long durationMs = System.currentTimeMillis() - startTimeMs;
+                    if (durationMs > 1000) {
+                        AppLogger.log(TAG, "[IN_FLIGHT_WARNING] Mass Delete scan execution took " + durationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]");
+                    }
+
                     if (!mediaStoreResults.isEmpty()) {
-                        long durationMs = System.currentTimeMillis() - startTimeMs;
                         writeErrorLogToDisk("MediaStore returned " + mediaStoreResults.size() + " results in " + durationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]", null);
                         updateUIWithResults(mediaStoreResults, params);
                     } else {
@@ -276,11 +284,12 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                             }
                         });
                         List<MassDeleteAdapter.SearchResult> fileSystemResults = performFallbackFileSearch(params);
-                        long durationMs = System.currentTimeMillis() - startTimeMs;
-                        writeErrorLogToDisk("Fallback deep disk scan returned " + fileSystemResults.size() + " results in " + durationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]", null);
+                        long fallbackDurationMs = System.currentTimeMillis() - startTimeMs;
+                        writeErrorLogToDisk("Fallback deep disk scan returned " + fileSystemResults.size() + " results in " + fallbackDurationMs + " ms for query: [" + query + "] [Filter: " + currentFilterType + "]", null);
                         updateUIWithResults(fileSystemResults, params);
                     }
                 } catch (Throwable t) {
+                    AppLogger.logError(TAG, "Unhandled exception during mass delete search execution", t);
                     writeErrorLogToDisk("Unhandled exception in executeQuery runnable", t);
                     Log.e(TAG, "Search query background execution encountered an exception. Bypassing safely.", t);
                     try {
@@ -369,6 +378,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
     /**
      * UNIVERSAL MASTER ENGINE: 100% OEM-Agnostic & ColorOS / OPPO Safe.
      * Guarantees 0% ghost thumbnails via physical File.exists() verification.
+     * Includes Progressive Batch Rendering for "All" and "Other" filters.
      */
     private List<MassDeleteAdapter.SearchResult> executeQueryWithMediaStore(QueryParameters params) {
         List<MassDeleteAdapter.SearchResult> masterResults = new ArrayList<>();
@@ -379,6 +389,19 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                 masterResults.addAll(querySingleUriForMassDelete(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, params, MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE, processedPaths));
                 masterResults.addAll(querySingleUriForMassDelete(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, params, MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO, processedPaths));
                 masterResults.addAll(querySingleUriForMassDelete(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, params, MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO, processedPaths));
+
+                // PROGRESSIVE BATCH RENDERING: Display fast media query results instantly (<100ms) before master file table scan
+                if (!masterResults.isEmpty() && !Thread.currentThread().isInterrupted()) {
+                    List<MassDeleteAdapter.SearchResult> initialBatch = new ArrayList<>(masterResults);
+                    Collections.sort(initialBatch, new Comparator<MassDeleteAdapter.SearchResult>() {
+                        @Override
+                        public int compare(MassDeleteAdapter.SearchResult r1, MassDeleteAdapter.SearchResult r2) {
+                            return Long.compare(r2.getLastModifiedForGrouping(), r1.getLastModifiedForGrouping());
+                        }
+                    });
+                    updateUIWithResults(initialBatch, params);
+                }
+
                 masterResults.addAll(querySingleUriForMassDelete(MediaStore.Files.getContentUri("external"), params, MediaStore.Files.FileColumns.MEDIA_TYPE_NONE, processedPaths));
             } else if ("images".equals(currentFilterType)) {
                 masterResults.addAll(querySingleUriForMassDelete(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, params, MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE, processedPaths));
@@ -418,6 +441,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
             });
 
         } catch (Exception e) {
+            AppLogger.logError(TAG, "Exception in executeQueryWithMediaStore", e);
             writeErrorLogToDisk("Exception in executeQueryWithMediaStore", e);
             Log.e(TAG, "Error in executeQueryWithMediaStore for MassDelete", e);
         }
@@ -428,6 +452,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
     private List<MassDeleteAdapter.SearchResult> querySingleUriForMassDelete(Uri queryUri, QueryParameters params, int overrideMediaType, Set<String> processedPaths) {
         List<MassDeleteAdapter.SearchResult> results = new ArrayList<>();
         Cursor cursor = null;
+        long uriStartTimeMs = System.currentTimeMillis();
 
         try {
             StringBuilder selection = new StringBuilder();
@@ -441,9 +466,9 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
             selection.append(MediaStore.Files.FileColumns.DATA + " NOT LIKE ?");
             selectionArgs.add("%/HFMRecycleBin/%");
 
-            // Exclude systemic pictorial/thumbnail cache directories on ColorOS to prevent Binder buffer lock
+            // Exclude systemic pictorial/thumbnail cache directories on ColorOS at SQLite level to prevent Binder buffer lock
             boolean isFilesUri = queryUri.equals(MediaStore.Files.getContentUri("external"));
-            if (isFilesUri) {
+            if (isFilesUri || "all".equals(currentFilterType) || "other".equals(currentFilterType)) {
                 if (selection.length() > 0) selection.append(" AND ");
                 selection.append(MediaStore.Files.FileColumns.DATA + " NOT LIKE ? AND " + MediaStore.Files.FileColumns.DATA + " NOT LIKE ?");
                 selectionArgs.add("%/Pictorial/offline/%");
@@ -485,6 +510,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
 
                 while (cursor.moveToNext()) {
                     if (Thread.currentThread().isInterrupted()) {
+                        AppLogger.log(TAG, "[THREAD_CANCELLED] Cursor iteration interrupted for URI: " + queryUri);
                         break; // Thread cancellation check to release SQLite read-lock immediately
                     }
                     try {
@@ -529,12 +555,21 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
                     }
                 }
             }
+
+            long queryDurationMs = System.currentTimeMillis() - uriStartTimeMs;
+            if (queryDurationMs > 1000) {
+                AppLogger.log(TAG, "[IN_FLIGHT_WARNING] MassDelete query for URI " + queryUri + " executed in " + queryDurationMs + " ms | Found: " + results.size() + " items");
+            }
         } catch (Exception e) {
+            AppLogger.logError(TAG, "SQLite/Binder error querying URI for MassDelete: " + queryUri, e);
             writeErrorLogToDisk("Error querying URI for MassDelete " + queryUri, e);
             Log.e(TAG, "Error querying URI for MassDelete " + queryUri + ": " + e.getMessage());
         } finally {
             if (cursor != null) {
                 cursor.close(); // Guarantees SQLite read-lock release on ColorOS
+                if (Thread.currentThread().isInterrupted()) {
+                    AppLogger.log(TAG, "[THREAD_CANCELLED] MassDelete cursor closed and SQLite read-lock handle released for URI: " + queryUri);
+                }
             }
         }
 
@@ -1327,6 +1362,7 @@ public class MassDeleteActivity extends Activity implements MassDeleteAdapter.On
         }
         if (currentSearchFuture != null) {
             currentSearchFuture.cancel(true);
+            AppLogger.log(TAG, "[THREAD_CANCELLED] MassDeleteActivity onDestroy called, current scan future cancelled.");
         }
         super.onDestroy();
     }
